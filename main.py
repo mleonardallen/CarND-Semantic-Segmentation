@@ -4,6 +4,8 @@ import helper
 import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
+import tensorflow.contrib.keras as keras
+import math
 
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
@@ -83,7 +85,7 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
 tests.test_optimize(optimize)
 
 def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             correct_label, keep_prob, learning_rate):
+             correct_label, keep_prob, learning_rate, num_examples=None):
     """
     Train neural network and print out the loss during training.
     :param sess: TF Session
@@ -97,7 +99,17 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param keep_prob: TF Placeholder for dropout keep probability
     :param learning_rate: TF Placeholder for learning rate
     """
+    sess.run(tf.global_variables_initializer())
+
+    # progress bar: target iterations
+    target = None
+    if num_examples != None:
+        target = int(math.ceil(num_examples/batch_size))
+
     for i in range(epochs):
+        step = 0
+        bar = keras.utils.Progbar(target=target)
+
         for image, label in get_batches_fn(batch_size):
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict = {
                 input_image: image,
@@ -105,7 +117,9 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
                 learning_rate: 1e-3,
                 keep_prob: 0.5
             })
-    pass
+            step += 1
+            bar.update(step, values=[('train loss', loss)])
+
 tests.test_train_nn(train_nn)
 
 def run():
@@ -128,7 +142,7 @@ def run():
         # Path to vgg model
         vgg_path = os.path.join(data_dir, 'vgg')
         # Create function to get batches
-        get_batches_fn = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
+        get_batches_fn, num_examples = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
 
         # OPTIONAL: Augment Images for better results
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
@@ -142,7 +156,7 @@ def run():
 
         # TODO: Train NN using the train_nn function
         train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             correct_label, keep_prob, learning_rate)
+             correct_label, keep_prob, learning_rate, num_examples=num_examples)
 
         # TODO: Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)

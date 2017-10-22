@@ -65,20 +65,22 @@ def gen_batch_function(data_folder, image_shape):
     :param image_shape: Tuple - Shape of image
     :return:
     """
+    image_paths = glob(os.path.join(data_folder, 'image_2', '*.png'))
+    label_paths = {
+        re.sub(r'_(lane|road)_', '_', os.path.basename(path)): path
+        for path in glob(os.path.join(data_folder, 'gt_image_2', '*_road_*.png'))}
+    num_exmaples = len(image_paths)
+
     def get_batches_fn(batch_size):
         """
         Create batches of training data
         :param batch_size: Batch Size
         :return: Batches of training data
         """
-        image_paths = glob(os.path.join(data_folder, 'image_2', '*.png'))
-        label_paths = {
-            re.sub(r'_(lane|road)_', '_', os.path.basename(path)): path
-            for path in glob(os.path.join(data_folder, 'gt_image_2', '*_road_*.png'))}
         background_color = np.array([255, 0, 0])
 
         random.shuffle(image_paths)
-        for batch_i in range(0, len(image_paths), batch_size):
+        for batch_i in range(0, num_exmaples, batch_size):
             images = []
             gt_images = []
             for image_file in image_paths[batch_i:batch_i+batch_size]:
@@ -95,7 +97,7 @@ def gen_batch_function(data_folder, image_shape):
                 gt_images.append(gt_image)
 
             yield np.array(images), np.array(gt_images)
-    return get_batches_fn
+    return get_batches_fn, num_exmaples
 
 
 def gen_test_output(sess, logits, keep_prob, image_pl, data_folder, image_shape):
