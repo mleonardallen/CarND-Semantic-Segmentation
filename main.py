@@ -101,18 +101,17 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     """
     sess.run(tf.global_variables_initializer())
 
-    # progress bar: target iterations
-    target = None
-    if num_examples != None:
-        target = int(math.ceil(num_examples/batch_size))
-
     for i in range(epochs):
 
-        print('epoch: %d' % i + 1)
+        print('epoch: %d' % (i + 1))
+
+        # create progress bar
+        bar = None
+        if num_examples != None:
+            target = int(math.ceil(num_examples/batch_size))
+            bar = keras.utils.Progbar(target)
 
         step = 0
-        bar = keras.utils.Progbar(target=target)
-        bar.update(step)
 
         for image, label in get_batches_fn(batch_size):
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict = {
@@ -122,7 +121,9 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
                 keep_prob: 0.5
             })
             step += 1
-            bar.update(step, values=[('train loss', loss)])
+
+            if bar:
+                bar.update(step, values=[('train loss', loss)])
 
 tests.test_train_nn(train_nn)
 
