@@ -3,10 +3,13 @@
 ### Introduction
 In this project, I label the pixels of a road in images using a Fully Convolutional Network (FCN).
 
-###
-|Test Image |Result |
-| --------- | ----- |
-|![um_000029.png](https://github.com/mleonardallen/CarND-Semantic-Segmentation/blob/master/runs/1519076313.807345/um_000029.png?raw=true)|https://github.com/mleonardallen/CarND-Semantic-Segmentation/blob/master/runs/1519076313.807345/um_000029.png?raw=true)|
+### Sample Results
+
+![um_000029.png](https://github.com/mleonardallen/CarND-Semantic-Segmentation/blob/master/runs/1519076313.807345/um_000029.png?raw=true)
+
+![um_000010.png](https://github.com/mleonardallen/CarND-Semantic-Segmentation/blob/master/runs/1519076313.807345/um_000010.png)
+
+![um_000034.png](https://github.com/mleonardallen/CarND-Semantic-Segmentation/blob/master/runs/1519076313.807345/um_000034.png)
 
 ### Setup
 ##### Frameworks and Packages
