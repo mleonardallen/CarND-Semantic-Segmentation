@@ -6,9 +6,15 @@ from distutils.version import LooseVersion
 import project_tests as tests
 import tensorflow.contrib.keras as keras
 import math
+import time
+import argparse
 
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
 from tensorflow.python.framework import dtypes
+from tensorflow.python.platform import gfile
+
+# from tensorflow.tools.graph_transforms import TransformGraph
+
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
 print('TensorFlow Version: {}'.format(tf.__version__))
@@ -39,6 +45,17 @@ def load_vgg(sess, vgg_path):
 
     return input_tensor, keep_prob_tensor, vgg_layer3_out, vgg_layer4_out, vgg_layer7_out
 tests.test_load_vgg(load_vgg, tf)
+
+def load_optimized(sess, optimized_path):
+    tag = ''
+    tf.saved_model.loader.load(sess, [tag], optimized_path)
+    graph = tf.get_default_graph()
+
+    input_tensor = graph.get_tensor_by_name('image_input:0')
+    keep_prob_tensor = graph.get_tensor_by_name('keep_prob:0')
+    logits_tensor = graph.get_tensor_by_name('logits:0')
+
+    return input_tensor, keep_prob_tensor, logits_tensor
 
 def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     """
@@ -86,8 +103,7 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     return logits, train_op, cross_entropy_loss
 tests.test_optimize(optimize)
 
-def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             correct_label, keep_prob, learning_rate, num_examples=None):
+def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image, correct_label, keep_prob, learning_rate, num_examples=1):
     """
     Train neural network and print out the loss during training.
     :param sess: TF Session
@@ -105,13 +121,11 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
 
     for i in range(epochs):
 
-        print('epoch: %d' % (i + 1))
+        print('epoch: %d of %d' % (i + 1, epochs))
 
         # create progress bar
-        bar = None
-        if num_examples != None:
-            target = int(math.ceil(num_examples/batch_size))
-            bar = keras.utils.Progbar(target)
+        target = int(math.ceil(num_examples/batch_size)) if num_examples else None
+        bar = keras.utils.Progbar(target)
 
         step = 0
 
@@ -124,68 +138,38 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
             })
             step += 1
 
-            if bar:
-                bar.update(step, values=[('train loss', loss)])
+            bar.update(step, values=[('train loss', loss)])
 
 tests.test_train_nn(train_nn)
 
-def run():
-    num_classes = 2
-    image_shape = (160, 576)
-    epochs = 1
-    batch_size = 4
-    data_dir = './data'
-    runs_dir = './runs'
-    tests.test_for_kitti_dataset(data_dir)
+num_classes = 2
+image_shape = (160, 576)
+epochs = 100
+batch_size = 8
+data_dir = './data'
+runs_dir = './runs'
+model_dir = './model'
+tests.test_for_kitti_dataset(data_dir)
 
-    # Download pretrained vgg model
-    helper.maybe_download_pretrained_vgg(data_dir)
+optimized_path = os.path.join(model_dir, 'optimized_graph.pb')
 
-    # OPTIONAL: Train and Inference on the cityscapes dataset instead of the Kitti dataset.
-    # You'll need a GPU with at least 10 teraFLOPS to train on.
-    #  https://www.cityscapes-dataset.com/
+# Download pretrained vgg model
+helper.maybe_download_pretrained_vgg(data_dir)
 
-    config = tf.ConfigProto()
-    # JIT level, this can be set to ON_1 or ON_2 
-    jit_level = tf.OptimizerOptions.ON_1
-    config.graph_options.optimizer_options.global_jit_level = jit_level
+with tf.Session() as sess:
+    # Path to vgg model
+    vgg_path = os.path.join(data_dir, 'vgg')
+    # Create function to get batches
+    get_batches_fn, num_examples = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
 
-    with tf.Session(config=config) as sess:
-        # Path to vgg model
-        vgg_path = os.path.join(data_dir, 'vgg')
-        # Create function to get batches
-        get_batches_fn, num_examples = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
+    image_input, keep_prob, vgg_layer3_out, vgg_layer4_out, vgg_layer7_out = load_vgg(sess, vgg_path)
+    output = layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes)
 
-        # OPTIONAL: Augment Images for better results
-        #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
+    correct_label = tf.placeholder(tf.int32, [None, None, None, num_classes], name='correct_label')
+    learning_rate = tf.placeholder(tf.float32, name='learning_rate')
+    logits, train_op, cross_entropy_loss = optimize(output, correct_label, learning_rate, num_classes)
 
-        input_image, keep_prob, vgg_layer3_out, vgg_layer4_out, vgg_layer7_out = load_vgg(sess, vgg_path)
-        output = layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes)
+    train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, image_input,
+         correct_label, keep_prob, learning_rate, num_examples=num_examples)
 
-        correct_label = tf.placeholder(tf.int32, [None, None, None, num_classes], name='correct_label')
-        learning_rate = tf.placeholder(tf.float32, name='learning_rate')
-        logits, train_op, cross_entropy_loss = optimize(output, correct_label, learning_rate, num_classes)
-
-        # TODO: Train NN using the train_nn function
-        train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             correct_label, keep_prob, learning_rate, num_examples=num_examples)
-
-        # inference performance: freeze graph & fuse graph operations 
-        graphdef = tf.get_default_graph().as_graph_def()
-        frozen_graph = tf.graph_util.convert_variables_to_constants(sess, graphdef, ['logits'])
-        optimized_graph = optimize_for_inference(frozen_graph, ['image_input', 'keep_prob'], ['logits'], dtypes.float32.as_datatype_enum)
-
-    tf.reset_default_graph()
-    with tf.Session(config=config) as inference_sess:
-
-        inference_image_input, inference_keep_prob, logits = tf.import_graph_def(optimized_graph,
-            return_elements=['image_input:0', 'keep_prob:0', 'logits:0'], name='')
-
-        # TODO: Save inference data using helper.save_inference_samples
-        helper.save_inference_samples(runs_dir, data_dir, inference_sess, image_shape, logits, inference_keep_prob, inference_image_input)
-
-        # OPTIONAL: Apply the trained model to a video
-
-
-if __name__ == '__main__':
-    run()
+    helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, image_input)
